@@ -321,6 +321,7 @@ def test_the_turning_square_says_its_side() -> None:
         ("approved", 0, "Rodada 1: aprovada"),
         ("declined", 0, "Rodada 1: desistência"),
         ("not_converged", 2, "Rodada 1: sem acordo, 2 violações"),
+        ("infeasible", 1, "Planta inviável, 1 violação"),
     ],
 )
 def test_round_title(status: str, count: int, expected: str) -> None:

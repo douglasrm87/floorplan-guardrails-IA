@@ -32,6 +32,8 @@ proteções antes de chegar ao mobiliador:
    forneceu: o medido, o exigido ou o que a ferramenta devolveu. Número
    inventado derruba o texto inteiro, que é trocado pela `message`.
 3. Violação sem achado recebe a `message`; `ref` repetido vale o primeiro.
+4. Identificador de parâmetro no texto ("door_clearance_depth") é trocado
+   pela descrição do parâmetro: o id é nome de ferramenta, não de aluno.
 
 Medido, exigido, unidade e fonte nunca saem do texto do modelo: o parecer
 tem um item por violação, na mesma ordem, e esses campos são lidos da
@@ -42,7 +44,7 @@ import json
 import os
 import re
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, Literal, Protocol
 
@@ -210,6 +212,43 @@ def lookup(rules: FurnitureRules, param_id: str) -> dict | None:
         "source": parameter.source,
         "description": parameter.description,
     }
+
+
+def phrase(description: str) -> str:
+    """Uma descrição de parâmetro do jeito que entra no meio de uma frase."""
+    text = description.strip().removesuffix(".")
+    return text[:1].lower() + text[1:]
+
+
+def parameter_names(rules: FurnitureRules) -> dict[str, str]:
+    """Cada identificador de parâmetro e o que escrever no lugar dele.
+
+    Vale para os ids da ferramenta e para o nome curto `use_zone_depth`, que
+    o fiscal às vezes escreve sem o item.
+    """
+    names = {
+        param_id: phrase(lookup(rules, param_id)["description"])
+        for param_id in parameter_ids(rules)
+    }
+    names["use_zone_depth"] = phrase(rules.use_zone_depth.description)
+    return names
+
+
+def without_ids(text: str, names: Mapping[str, str]) -> str:
+    """O texto com cada identificador de parâmetro trocado pela descrição.
+
+    O id mais longo é tentado primeiro, para que `use_zone_depth.wardrobe`
+    não vire a descrição seguida de ".wardrobe". Um id entre crases leva as
+    crases junto. Um id que não existe, como `use_zone_depth.cadeira`, fica
+    como está.
+    """
+    if not names:
+        return text
+
+    ids = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True))
+    pattern = re.compile(rf"`?\b({ids})\b(?!\.\w)`?")
+
+    return pattern.sub(lambda found: names[found.group(1)], text)
 
 
 def unknown_parameter(param_id: str, valid_ids: Sequence[str]) -> str:
@@ -459,6 +498,7 @@ def assemble_review(
     violations: Sequence[FurnitureViolation],
     report: Any,
     tool_numbers: Sequence[float] = (),
+    names: Mapping[str, str] | None = None,
 ) -> Review:
     """O parecer final, montado pelo código a partir da resposta do fiscal.
 
@@ -472,7 +512,13 @@ def assemble_review(
 
     O resumo passa pela mesma verificação, contra os números de todas as
     violações; se cair, vira o resumo escrito pelo código.
+
+    Depois da verificação, cada identificador de parâmetro na explicação, na
+    sugestão e no resumo é trocado pelo que `names` diz (ver
+    `parameter_names`). A ordem importa: a descrição pode trazer número, como
+    os 360 graus do giro, e esse número não foi escrito pelo fiscal.
     """
+    names = names or {}
     refs = finding_ids(len(violations))
     first: dict[str, Any] = {}
     duplicates: list[str] = []
@@ -504,7 +550,12 @@ def assemble_review(
         else:
             explanation = finding.explanation
 
-        feedback.append(Feedback(message=explanation, suggestion=finding.suggestion))
+        feedback.append(
+            Feedback(
+                message=without_ids(explanation, names),
+                suggestion=without_ids(finding.suggestion, names),
+            )
+        )
 
     everything = [
         value for violation in violations for value in given_numbers(violation)
@@ -517,7 +568,7 @@ def assemble_review(
 
     return Review(
         feedback=feedback,
-        summary=summary,
+        summary=without_ids(summary, names),
         replacements=replacements,
         duplicate_refs=duplicates,
         missing_refs=missing,
@@ -598,7 +649,12 @@ class ModelInspector:
             )
 
         usage = reply.usage_details or {}
-        review = assemble_review(violations, report, consultation.numbers)
+        review = assemble_review(
+            violations,
+            report,
+            consultation.numbers,
+            names=parameter_names(self.rules),
+        )
 
         return replace(
             review,

@@ -52,10 +52,12 @@ from floorplan_guardrails.inspector import (
     lookup,
     numbers_in,
     parameter_ids,
+    parameter_names,
     parameter_of,
     rejected_summary,
     report_model,
     unsupported_numbers,
+    without_ids,
 )
 from floorplan_guardrails.inspector_prompt import INSTRUCTIONS
 from floorplan_guardrails.negotiation import Negotiation, negotiate
@@ -628,6 +630,132 @@ def test_the_review_follows_the_order_of_the_violations() -> None:
     ]
 
 
+# --- os ids de parâmetro no texto -----------------------------------------------
+
+NAMES = parameter_names(RULES)
+
+
+def test_each_parameter_id_has_the_description_as_its_name() -> None:
+    assert NAMES["door_clearance_depth"] == (
+        "profundidade livre diante do vão de cada porta"
+    )
+    assert NAMES["use_zone_depth.wardrobe"] == NAMES["use_zone_depth"]
+    assert set(parameter_ids(RULES)) < set(NAMES)
+
+
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        (
+            "o parâmetro door_clearance_depth pede mais",
+            "o parâmetro profundidade livre diante do vão de cada porta pede mais",
+        ),
+        (
+            "(use_zone_depth.wardrobe = 0,50 m)",
+            "(profundidade da faixa livre diante de cada lado de uso = 0,50 m)",
+        ),
+        (
+            "segundo `turning_diameter`.",
+            "segundo diâmetro do giro de uma cadeira de rodas.",
+        ),
+        (
+            "a use_zone_depth do sofá",
+            "a profundidade da faixa livre diante de cada lado de uso do sofá",
+        ),
+        ("use_zone_depth.cadeira não existe", "use_zone_depth.cadeira não existe"),
+        ("my_door_clearance_depth fica", "my_door_clearance_depth fica"),
+    ],
+)
+def test_parameter_ids_are_replaced_by_their_names(written: str, expected: str) -> None:
+    assert without_ids(written, NAMES) == expected
+
+
+def test_explanation_suggestion_and_summary_lose_the_ids() -> None:
+    violations = violations_of()
+    explanation = "A cama deixa 0,35 m, e door_clearance_depth pede 0.80 m."
+
+    review = assemble_review(
+        violations,
+        report(
+            [
+                finding(
+                    "f1",
+                    explanation,
+                    "Para cumprir door_clearance_depth: m2 em x = 1.20, y = 4.10, "
+                    "rotação 0.",
+                ),
+                finding("f2"),
+                finding("f3"),
+            ],
+            summary="Falta cumprir door_clearance_depth.",
+        ),
+        names=NAMES,
+    )
+
+    first = review.feedback[0]
+    assert first.message == (
+        "A cama deixa 0,35 m, e profundidade livre diante do vão de cada porta "
+        "pede 0.80 m."
+    )
+    assert first.suggestion == (
+        "Para cumprir profundidade livre diante do vão de cada porta: m2 em "
+        "x = 1.20, y = 4.10, rotação 0."
+    )
+    assert review.summary == (
+        "Falta cumprir profundidade livre diante do vão de cada porta."
+    )
+    # Vírgula e ponto continuam valendo, e a troca não conta como número.
+    assert review.replacements == []
+
+
+def test_a_number_in_the_description_does_not_trip_the_check() -> None:
+    """A troca vem depois da verificação: os 360 graus não são do fiscal."""
+    violations = violations_of()
+    names = {"door_clearance_depth": "espaço para abrir a porta de 360 graus"}
+
+    review = assemble_review(
+        violations,
+        report(
+            [
+                finding("f1", "Só 0,35 m (door_clearance_depth)."),
+                finding("f2"),
+                finding("f3"),
+            ]
+        ),
+        names=names,
+    )
+
+    assert review.feedback[0].message == (
+        "Só 0,35 m (espaço para abrir a porta de 360 graus)."
+    )
+    assert review.replacements == []
+
+
+def test_a_replaced_explanation_is_the_message_even_with_ids() -> None:
+    violations = violations_of()
+
+    review = assemble_review(
+        violations,
+        report(
+            [
+                finding("f1", "door_clearance_depth pede 0,45 m."),
+                finding("f2"),
+                finding("f3"),
+            ]
+        ),
+        names=NAMES,
+    )
+
+    assert review.feedback[0].message == violations[0].message
+    assert review.replacements[0].original == "door_clearance_depth pede 0,45 m."
+
+
+def test_instructions_ask_for_names_and_decimal_comma() -> None:
+    assert "citar identificadores de parâmetro" in INSTRUCTIONS
+    assert "vírgula decimal" in INSTRUCTIONS
+    assert "continuam com ponto decimal" in INSTRUCTIONS
+
+
 # --- o fiscal inteiro ----------------------------------------------------------
 
 
@@ -659,6 +787,34 @@ def test_the_model_inspector_reports_tokens_latency_and_tool_calls() -> None:
     assert review.feedback[1].suggestion == "Mova m4 para o leste."
     assert review.latency_ms >= 0
     assert len(client.requests) == 2
+
+
+def test_the_model_inspector_replaces_parameter_ids() -> None:
+    client = ScriptedChatClient(
+        [
+            answer(
+                [
+                    finding("f1", "Só 0,35 m; door_clearance_depth pede 0,80 m."),
+                    finding("f2"),
+                    finding("f3"),
+                ],
+                "Cumpra use_zone_depth.bed_double.",
+            ),
+        ]
+    )
+
+    review = asyncio.run(
+        ModelInspector(client, RULES, CATALOG).review(
+            furnished(), violations_of(), Profile()
+        )
+    )
+
+    assert review.feedback[0].message == (
+        "Só 0,35 m; profundidade livre diante do vão de cada porta pede 0,80 m."
+    )
+    assert review.summary == (
+        "Cumpra profundidade da faixa livre diante de cada lado de uso."
+    )
 
 
 def test_a_reply_outside_the_format_is_an_inspector_error() -> None:

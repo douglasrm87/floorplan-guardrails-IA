@@ -1,0 +1,11 @@
+# Pedido de móveis para plans/quarto_apertado.json.
+# Cada cômodo lista os item_id do catálogo; repetir um item pede mais de uma
+# unidade dele. notes é texto livre repassado ao mobiliador.
+
+items:
+  r1: [sofa]
+  r2: [fridge, stove]
+  r3: [bed_double, wardrobe]
+  r4: [toilet, shower]
+
+notes: ""

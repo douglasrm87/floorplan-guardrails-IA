@@ -17,6 +17,15 @@ Uma rodada
 5. Sobrando rodadas, a proposta e o parecer voltam ao mobiliador; na última,
    o estado é `not_converged`.
 
+Antes da primeira rodada
+------------------------
+Com o perfil acessível, há plantas que nenhuma disposição de móveis salva:
+um banheiro de 1,20 m de largura não comporta o giro de cadeira de rodas nem
+vazio. Nesse caso a negociação nem começa. O código confere cada cômodo em
+que o giro é verificado e, se algum não comporta o giro vazio, termina em
+`infeasible`, sem chamar modelo nenhum, com uma mensagem por cômodo. Quem
+resolve isso é a etapa de geração da planta, não o mobiliador.
+
 Quem decide
 -----------
 O estado de cada rodada é calculado aqui, a partir de `inspect`. O fiscal só
@@ -27,6 +36,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from floorplan_guardrails import validator
 from floorplan_guardrails.furnisher import Feedback, Furnisher
 from floorplan_guardrails.furniture import (
     Catalog,
@@ -36,11 +46,13 @@ from floorplan_guardrails.furniture import (
     Profile,
 )
 from floorplan_guardrails.furniture_rules import FurnitureRules
+from floorplan_guardrails.geometry import TOLERANCE
 from floorplan_guardrails.inspection import (
     INTEGRITY_RULES_P2,
     FurnitureViolation,
     inspect,
     require_approved_plan,
+    turning_rooms,
 )
 from floorplan_guardrails.inspector import (
     APPROVED_SUMMARY,
@@ -50,6 +62,7 @@ from floorplan_guardrails.inspector import (
 )
 from floorplan_guardrails.rules import Ruleset
 from floorplan_guardrails.schema import FloorPlan
+from floorplan_guardrails.validator import room_noun
 
 # O registro importa `Round` e `Negotiation` deste módulo para reconstruir
 # execuções gravadas. Importá-lo aqui de verdade seria circular; o nome só
@@ -73,18 +86,23 @@ DECLINED = "declined"
 #: Reprovada e o limite de rodadas acabou.
 NOT_CONVERGED = "not_converged"
 
+#: A planta não comporta o giro nem vazia: a negociação nem começa.
+INFEASIBLE = "infeasible"
+
 #: O estado de uma rodada.
-RoundStatus = Literal["approved", "rejected", "declined", "not_converged"]
+RoundStatus = Literal["approved", "rejected", "declined", "not_converged", "infeasible"]
 
 #: O estado com que a negociação termina: `rejected` nunca é o último.
-FinalStatus = Literal["approved", "declined", "not_converged"]
+FinalStatus = Literal["approved", "declined", "not_converged", "infeasible"]
 
 
 @dataclass(frozen=True)
 class Round:
     """Uma rodada: a proposta, o que o código achou e o parecer.
 
-    `review` fica vazio (`None`) numa desistência, em que nada é conferido.
+    `review` fica vazio (`None`) numa desistência, em que nada é conferido,
+    e numa planta inviável, em que o modelo não chega a ser chamado: a
+    rodada guarda então uma proposta vazia e as violações do giro.
     """
 
     proposal: FurnishingProposal
@@ -175,6 +193,53 @@ class Negotiation:
         )
 
 
+#: A proposta de uma rodada em que o mobiliador não foi chamado.
+EMPTY_PROPOSAL = FurnishingProposal(placements=[], omissions=[], design_notes="")
+
+
+def infeasible_rooms(
+    plan: FloorPlan, rules: FurnitureRules, profile: Profile
+) -> list[FurnitureViolation]:
+    """Os cômodos que não comportam o giro de cadeira de rodas nem vazios.
+
+    Só vale com o perfil acessível e nos tipos de cômodo do parâmetro, como
+    a verificação de giro. Vazio, o maior quadrado que cabe num retângulo tem
+    o lado igual à menor dimensão dele; se isso fica abaixo do diâmetro de
+    giro, nenhuma disposição de móveis resolve.
+    """
+    parameter = rules.turning_diameter
+    violations = []
+
+    for room in turning_rooms(plan, rules, profile):
+        side = min(room.width, room.depth)
+
+        if side >= parameter.value - TOLERANCE:
+            continue
+
+        measured = validator.number(side)
+        required = validator.number(parameter.value)
+        violations.append(
+            FurnitureViolation(
+                rule_id="turning_space",
+                room_ids=[room.id],
+                placement_ids=[],
+                measured=side,
+                required=parameter.value,
+                unit="m",
+                message=(
+                    f"O {room_noun(room)} não tem espaço de giro para cadeira de "
+                    "rodas nem vazio: o maior quadrado que cabe nele tem "
+                    f"{measured} m de lado, e são exigidos {required} m. Nenhuma "
+                    "disposição de móveis resolve isso: a planta precisa voltar "
+                    "à etapa de geração."
+                ),
+                source=parameter.source,
+            )
+        )
+
+    return violations
+
+
 def only_integrity(violations: Sequence[FurnitureViolation]) -> bool:
     """Se todas as violações são do grupo integridade."""
     return all(violation.rule_id in INTEGRITY_RULES_P2 for violation in violations)
@@ -199,6 +264,10 @@ async def negotiate(
     P1 (`plan_rules`; sem ele, `config/rules.yaml`). Planta reprovada levanta
     `InvalidInputPlan` e o mobiliador nem é chamado.
 
+    Com o perfil acessível, confere também que cada cômodo comporta o giro
+    vazio. Se algum não comporta, devolve a negociação em `infeasible`, com
+    uma única rodada sem proposta, e nenhum modelo é chamado.
+
     Devolve a negociação inteira, com uma `Round` por rodada, para que o
     desenho mostre o caminho e não só o destino.
     """
@@ -206,6 +275,33 @@ async def negotiate(
         raise ValueError("a negociação precisa de ao menos uma rodada")
 
     require_approved_plan(plan, plan_rules)
+
+    blocked = infeasible_rooms(plan, rules, profile)
+    if blocked:
+        current = Round(
+            proposal=EMPTY_PROPOSAL,
+            violations=blocked,
+            review=None,
+            status=INFEASIBLE,
+        )
+        if log is not None:
+            log.record(
+                number=1,
+                result=current,
+                plan=plan,
+                request=request,
+                profile=profile,
+                deployment=deployment,
+            )
+        return Negotiation(
+            run_id=log.run_id if log is not None else "",
+            plan=plan,
+            request=request,
+            profile=profile,
+            deployment=deployment,
+            status=INFEASIBLE,
+            rounds=[current],
+        )
 
     rounds: list[Round] = []
     previous: FurnishingProposal | None = None

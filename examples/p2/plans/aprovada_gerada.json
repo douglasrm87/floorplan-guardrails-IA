@@ -1,0 +1,101 @@
+{
+  "rooms": [
+    {
+      "id": "r1",
+      "type": "living_room",
+      "name": "Sala",
+      "x": 0.0,
+      "y": 0.0,
+      "width": 3.5,
+      "depth": 3.5
+    },
+    {
+      "id": "r2",
+      "type": "kitchen",
+      "name": "Cozinha",
+      "x": 3.5,
+      "y": 0.0,
+      "width": 2.5,
+      "depth": 3.5
+    },
+    {
+      "id": "r3",
+      "type": "bedroom",
+      "name": "Quarto do casal",
+      "x": 6.0,
+      "y": 0.0,
+      "width": 3.0,
+      "depth": 3.5
+    },
+    {
+      "id": "r4",
+      "type": "bathroom",
+      "name": "Banheiro",
+      "x": 9.0,
+      "y": 0.0,
+      "width": 1.5,
+      "depth": 3.5
+    }
+  ],
+  "windows": [
+    {
+      "room_id": "r1",
+      "wall": "north",
+      "offset": 0.5,
+      "width": 1.7,
+      "height": 1.2
+    },
+    {
+      "room_id": "r2",
+      "wall": "north",
+      "offset": 0.5,
+      "width": 1.2,
+      "height": 1.2
+    },
+    {
+      "room_id": "r3",
+      "wall": "north",
+      "offset": 0.5,
+      "width": 1.47,
+      "height": 1.2
+    },
+    {
+      "room_id": "r4",
+      "wall": "north",
+      "offset": 0.25,
+      "width": 1.0,
+      "height": 1.0
+    }
+  ],
+  "doors": [
+    {
+      "room_id": "r1",
+      "wall": "south",
+      "offset": 1.0,
+      "width": 0.9,
+      "to": "exterior"
+    },
+    {
+      "room_id": "r1",
+      "wall": "east",
+      "offset": 1.0,
+      "width": 0.8,
+      "to": "r2"
+    },
+    {
+      "room_id": "r2",
+      "wall": "east",
+      "offset": 1.0,
+      "width": 0.8,
+      "to": "r3"
+    },
+    {
+      "room_id": "r3",
+      "wall": "east",
+      "offset": 1.0,
+      "width": 0.8,
+      "to": "r4"
+    }
+  ],
+  "design_notes": "Aumentei as janelas da sala e do quarto para atender os requisitos mínimos de iluminação e ventilação natural; circulação linear mantém a entrada pela sala e acesso sequencial aos demais ambientes."
+}

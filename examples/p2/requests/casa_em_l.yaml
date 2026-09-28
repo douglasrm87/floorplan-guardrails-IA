@@ -1,0 +1,11 @@
+# Pedido de móveis para plans/casa_em_l.json.
+# Cada cômodo lista os item_id do catálogo; repetir um item pede mais de uma
+# unidade dele. notes é texto livre repassado ao mobiliador.
+
+items:
+  a: [sofa]
+  b: [fridge, stove]
+  c: [bed_double, wardrobe]
+  d: [toilet, shower]
+
+notes: ""

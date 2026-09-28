@@ -5,7 +5,8 @@ testes do laço do P1: entrega as propostas combinadas, em ordem, e guarda o
 que recebeu em cada chamada. O fiscal é o `MessageInspector`, embrulhado num
 espião que conta as chamadas.
 
-Os testes usam só as fixtures de `tests/fixtures/p2/`, nunca `config/`.
+Os testes usam só as fixtures de `tests/fixtures/p2/`, nunca `config/`. A
+exceção é a planta em L, que vem das fixtures do P1, em `tests/fixtures/`.
 """
 
 import asyncio
@@ -26,6 +27,7 @@ from floorplan_guardrails.furniture import (
     load_catalog,
 )
 from floorplan_guardrails.furniture_rules import load_furniture_rules
+from floorplan_guardrails.geometry import TOLERANCE
 from floorplan_guardrails.inspection import (
     INTEGRITY_RULES_P2,
     FurnitureViolation,
@@ -39,7 +41,9 @@ from floorplan_guardrails.inspector import (
 )
 from floorplan_guardrails.negotiation import (
     DEFAULT_MAX_ROUNDS,
+    INFEASIBLE,
     Negotiation,
+    infeasible_rooms,
     negotiate,
 )
 from floorplan_guardrails.negotiation_log import NegotiationLog, load_negotiation
@@ -48,6 +52,7 @@ from floorplan_guardrails.runlog import read_run
 from floorplan_guardrails.schema import FloorPlan
 
 FIXTURES = Path(__file__).parent / "fixtures" / "p2"
+L_SHAPED = Path(__file__).parent / "fixtures" / "l_shaped_plan.json"
 CATALOG = load_catalog(FIXTURES / "catalog.yaml")
 RULES = load_furniture_rules(CATALOG, FIXTURES / "furniture_rules.yaml")
 PLAN_RULES = load_rules(FIXTURES / "plan_rules.yaml")
@@ -472,3 +477,102 @@ def test_a_log_cut_at_the_start_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="não traz a planta"):
         load_negotiation(cut)
+
+
+# --- a planta inviável ---------------------------------------------------------
+
+
+def l_shaped(**bathroom: float) -> FloorPlan:
+    """A casa em L do P1: o banheiro (d) tem 4,00 × 1,20 m.
+
+    Com `bathroom`, as medidas do banheiro mudam, para o caso no limite.
+    """
+    data = json.loads(L_SHAPED.read_text(encoding="utf-8"))
+    for room in data["rooms"]:
+        if room["id"] == "d":
+            room.update(bathroom)
+
+    return FloorPlan.model_validate(data)
+
+
+def empty() -> FurnishingProposal:
+    return FurnishingProposal(placements=[], omissions=[], design_notes="")
+
+
+def run_l_shaped(
+    profile: Profile, furnisher: ScriptedFurnisher, **kwargs
+) -> Negotiation:
+    return asyncio.run(
+        negotiate(
+            l_shaped(),
+            FurnishingRequest(items={}),
+            profile,
+            furnisher,
+            SpyInspector(),
+            CATALOG,
+            RULES,
+            plan_rules=PLAN_RULES,
+            **kwargs,
+        )
+    )
+
+
+def test_a_bathroom_too_narrow_to_turn_ends_as_infeasible_without_calls() -> None:
+    furnisher = ScriptedFurnisher([empty()])
+
+    negotiation = run_l_shaped(Profile(accessible=True), furnisher)
+
+    assert furnisher.calls == []
+    assert negotiation.status == INFEASIBLE
+    assert (negotiation.input_tokens, negotiation.latency_ms) == (0, 0)
+    [only] = negotiation.rounds
+    assert only.review is None
+    assert only.proposal == empty()
+    assert [violation.room_ids for violation in only.violations] == [["d"]]
+    assert only.violations[0].message == (
+        'O cômodo "Banheiro" (d) não tem espaço de giro para cadeira de rodas '
+        "nem vazio: o maior quadrado que cabe nele tem 1,20 m de lado, e são "
+        "exigidos 1,50 m. Nenhuma disposição de móveis resolve isso: a planta "
+        "precisa voltar à etapa de geração."
+    )
+    assert only.violations[0].source == RULES.turning_diameter.source
+
+
+def test_the_same_plan_without_wheelchair_is_negotiated() -> None:
+    furnisher = ScriptedFurnisher([empty()])
+
+    negotiation = run_l_shaped(Profile(accessible=False), furnisher)
+
+    assert len(furnisher.calls) == 1
+    assert negotiation.status == "approved"
+
+
+def test_a_room_exactly_as_wide_as_the_turn_is_not_infeasible() -> None:
+    """No limite, com a tolerância geométrica, o giro cabe; abaixo dela, não."""
+    wheelchair = Profile(accessible=True)
+    diameter = RULES.turning_diameter.value
+
+    def blocked(depth: float) -> int:
+        return len(infeasible_rooms(l_shaped(depth=depth), RULES, wheelchair))
+
+    assert blocked(diameter) == 0
+    assert blocked(diameter - TOLERANCE) == 0
+    assert blocked(diameter - 2 * TOLERANCE) == 1
+
+
+def test_an_infeasible_negotiation_is_logged_and_replayed(tmp_path: Path) -> None:
+    log = NegotiationLog.create(tmp_path)
+    negotiation = run_l_shaped(
+        Profile(accessible=True), ScriptedFurnisher([empty()]), log=log
+    )
+
+    (line,) = read_run(log.path)
+    assert line["status"] == INFEASIBLE
+    assert line["report"] is None
+    assert "plan" in line
+
+    replayed = load_negotiation(log.path)
+    assert replayed == negotiation
+
+    figure = draw_negotiation(replayed.history, CATALOG, RULES, replayed.profile)
+    assert [ax.get_title() for ax in figure.axes] == ["Planta inviável, 1 violação"]

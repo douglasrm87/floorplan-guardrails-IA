@@ -56,6 +56,7 @@ from floorplan_guardrails.inspection import (
 from floorplan_guardrails.negotiation import (
     APPROVED,
     DECLINED,
+    INFEASIBLE,
     NOT_CONVERGED,
     REJECTED,
     RoundStatus,
@@ -97,6 +98,7 @@ ROUND_STATES: dict[str, str] = {
     REJECTED: "reprovada",
     DECLINED: "desistência",
     NOT_CONVERGED: "sem acordo",
+    INFEASIBLE: "inviável",
 }
 
 #: Abaixo desta medida, em metros, o rótulo do móvel leva só o id.
@@ -415,8 +417,15 @@ def round_title(
     status: RoundStatus,
     violations: Sequence[FurnitureViolation],
 ) -> str:
-    """O título de uma rodada: "Rodada 2: reprovada, 3 violações"."""
-    title = f"Rodada {round_number}: {ROUND_STATES[status]}"
+    """O título de uma rodada: "Rodada 2: reprovada, 3 violações".
+
+    A planta inviável não tem rodada de verdade, porque nenhum modelo foi
+    chamado: o título diz "Planta inviável".
+    """
+    if status == INFEASIBLE:
+        title = f"Planta {ROUND_STATES[status]}"
+    else:
+        title = f"Rodada {round_number}: {ROUND_STATES[status]}"
 
     if violations:
         title += f", {counted(len(violations))}"
