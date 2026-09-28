@@ -6,6 +6,11 @@ conhecia a convenção, e o fiscal sugeriu rotação com a frente para o lado
 errado. Por isso o texto mora aqui, e as instruções dos dois o incluem
 inteiro: mudar a convenção é mudar um lugar só.
 
+Na Fase 4c o fiscal ainda escolhia a parede certa e a rotação que deixava a
+frente contra ela: sabia para onde a frente aponta em cada rotação, mas
+errava a conta inversa. Por isso a convenção diz também qual rotação encosta
+o fundo em cada parede.
+
 O que pode entrar: o referencial da casa e o do móvel, a rotação, a posição
 como canto da pegada já girada e o que é a geometria calculada que chega na
 mensagem. O que não pode: nenhum valor de `config/furniture_rules.yaml`. Os
@@ -28,6 +33,12 @@ Referencial do móvel:
 Rotação, em graus e no sentido anti-horário, só 0, 90, 180 ou 270:
 - A frente aponta para o sul em 0, para o leste em 90, para o norte em 180 e para o oeste em 270. Fundo, esquerda e direita giram junto.
 - Em 90 e 270 o móvel fica deitado de lado: a extensão em x passa a ser o depth do catálogo, e a extensão em y passa a ser o width.
+- Para encostar o fundo de um móvel numa parede, use a rotação que deixa a frente para o lado oposto:
+  - fundo encostado na parede norte: frente para o sul, rotação 0;
+  - fundo encostado na parede oeste: frente para o leste, rotação 90;
+  - fundo encostado na parede sul: frente para o norte, rotação 180;
+  - fundo encostado na parede leste: frente para o oeste, rotação 270.
+- A frente de um móvel encostado a uma parede nunca fica voltada para essa mesma parede.
 
 Posição:
 - x e y de um móvel são o canto inferior esquerdo do retângulo que ele ocupa no piso, já girado, em coordenadas absolutas da casa. Não faça conta de rotação para posicionar: gire, veja qual é a extensão em x e em y, e ponha o canto inferior esquerdo onde quer.

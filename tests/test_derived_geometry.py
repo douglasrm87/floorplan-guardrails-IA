@@ -11,12 +11,13 @@ Os testes usam só as fixtures de `tests/fixtures/p2/`.
 
 import inspect as signatures
 import json
+import re
 from pathlib import Path
 
 import pytest
 import yaml
 
-from floorplan_guardrails import furnisher_prompt, inspector_prompt
+from floorplan_guardrails import furnisher_prompt, geometry, inspector_prompt
 from floorplan_guardrails.convention_prompt import CONVENTION
 from floorplan_guardrails.derived_geometry import (
     PROPOSAL_TITLE,
@@ -33,13 +34,16 @@ from floorplan_guardrails.furniture import (
     FurnishingRequest,
     Placement,
     Profile,
+    footprint,
     load_catalog,
+    side_segment,
 )
 from floorplan_guardrails.furniture_rules import load_furniture_rules
+from floorplan_guardrails.geometry import OPPOSITE, wall_line
 from floorplan_guardrails.inspection import door_faces, inspect
 from floorplan_guardrails.inspector import build_message as inspector_message
 from floorplan_guardrails.inspector import numbers_in, parse
-from floorplan_guardrails.schema import FloorPlan
+from floorplan_guardrails.schema import FloorPlan, Wall
 from floorplan_guardrails.validator import WALL_NAMES
 
 FIXTURES = Path(__file__).parent / "fixtures" / "p2"
@@ -142,9 +146,60 @@ def test_the_convention_is_not_written_twice(instructions: str) -> None:
         "180 e para o oeste em 270.",
         "A frente (front) do móvel é o lado sul",
         "canto inferior esquerdo do retângulo",
+        "nunca fica voltada para essa mesma parede",
     ):
         assert sentence in CONVENTION
         assert instructions.count(sentence) == 1
+
+
+@pytest.mark.parametrize(
+    ("wall", "x", "y", "span_x", "span_y"),
+    [
+        ("north", 1.0, 5.4, "x de 1.00 a 2.60", "y de 5.40 a 6.00"),
+        ("west", 0.0, 3.5, "x de 0.00 a 0.60", "y de 3.50 a 5.10"),
+        ("south", 1.0, 3.0, "x de 1.00 a 2.60", "y de 3.00 a 3.60"),
+        ("east", 3.4, 3.5, "x de 3.40 a 4.00", "y de 3.50 a 5.10"),
+    ],
+)
+def test_the_rotation_the_convention_gives_puts_the_back_on_the_wall(
+    wall: Wall, x: float, y: float, span_x: str, span_y: str
+) -> None:
+    """A relação inversa da convenção, conferida pela geometria do código.
+
+    Na Fase 4c o fiscal escolhia a parede certa e a rotação que deixava a
+    frente contra ela. A rotação vem do texto da convenção, e não do teste:
+    se o texto errar, o guarda-roupa sai de costas para o quarto.
+    """
+    name = WALL_NAMES[wall]
+    opposite = WALL_NAMES[OPPOSITE[wall]]
+    stated = re.findall(
+        rf"fundo encostado na parede {name}: frente para o (\w+), rotação (\d+)\b",
+        CONVENTION,
+    )
+    assert len(stated) == 1
+    front, rotation = stated[0]
+    assert front == opposite
+
+    room = next(room for room in plan().rooms if room.id == "r3")
+    wardrobe = Placement(
+        id="m4", room_id=room.id, item_id="wardrobe", x=x, y=y, rotation=int(rotation)
+    )
+
+    lines = proposal_geometry(plan(), CATALOG, only(wardrobe)).splitlines()
+
+    assert lines[1] == (
+        f"- m4, Guarda-roupa (wardrobe), no cômodo Quarto (r3), rotação {rotation}: "
+        f"ocupa {span_x}, {span_y}; frente para o {opposite}. "
+        "Catálogo: width 1.60, depth 0.60."
+    )
+
+    back, direction = side_segment(wardrobe, CATALOG, "back")
+    assert direction == wall
+    assert back.line == pytest.approx(wall_line(room, wall))
+
+    box = footprint(wardrobe, CATALOG)
+    assert geometry.span_x(room).start <= box.x0 < box.x1 <= geometry.span_x(room).end
+    assert geometry.span_y(room).start <= box.y0 < box.y1 <= geometry.span_y(room).end
 
 
 def test_the_inspector_is_told_to_keep_suggestions_inside_the_room() -> None:
