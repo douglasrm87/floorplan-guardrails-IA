@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from agent_framework import AgentResponse, Message
 
 from floorplan_guardrails.furnisher import (
     AzureFurnisher,
@@ -467,3 +468,36 @@ def test_the_endpoint_goes_through_the_p1_normalization() -> None:
 def test_an_unrecognized_endpoint_is_a_furnisher_error() -> None:
     with pytest.raises(FurnisherError, match="Ponto de extremidade"):
         AzureFurnisher("https://exemplo.com/", "chave-de-mentira", "um-deployment")
+
+
+# --- resposta fora do formato ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["não é JSON", '{"placements": []}'],
+    ids=["texto", "json-incompleto"],
+)
+def test_a_reply_outside_the_format_is_a_furnisher_error(
+    monkeypatch: pytest.MonkeyPatch, text: str
+) -> None:
+    """O framework só lê a resposta no formato pedido quando `value` é acessado.
+
+    Um texto fora do formato levantava ali o erro de validação do Pydantic,
+    fora do tratamento de erro, e o aluno via um traceback de dentro da
+    biblioteca.
+    """
+    furnisher = AzureFurnisher(
+        "https://recurso.openai.azure.com/", "chave-de-mentira", "um-deployment"
+    )
+
+    async def reply(message: str) -> AgentResponse:
+        return AgentResponse(
+            messages=[Message(role="assistant", contents=[text])],
+            response_format=FurnishingProposal,
+        )
+
+    monkeypatch.setattr(furnisher._agent, "run", reply)
+
+    with pytest.raises(FurnisherError, match="fora do formato esperado"):
+        asyncio.run(furnisher.propose(plan(), CATALOG, request(), Profile()))

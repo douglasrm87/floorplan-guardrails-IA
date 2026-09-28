@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Parâmetros de teste com valores que não coincidem com nenhuma coordenada
+# ---------------------------------------------------------------------------
+# Casados com `catalog.yaml` desta pasta. Nenhum valor abaixo é coordenada,
+# limite de cômodo, vão de porta ou medida do catálogo na planta e nas
+# propostas de teste, que só usam múltiplos de 0,05. Assim, se um destes
+# números aparecer no bloco de geometria, é porque vazou dos parâmetros, e
+# não coincidência.
+# ---------------------------------------------------------------------------
+
+door_clearance_depth:
+  description: "Profundidade livre diante do vão de cada porta."
+  unit: "m"
+  source: "Parâmetro de teste."
+  value: 0.83
+
+use_zone_depth:
+  description: "Profundidade da faixa livre diante de cada lado de uso."
+  unit: "m"
+  source: "Parâmetro de teste."
+  values:
+    bed_double: 0.47
+    bed_single: 0.53
+    wardrobe: 0.57
+    sofa: 0.43
+    toilet: 0.37
+
+turning_diameter:
+  description: "Diâmetro do giro de uma cadeira de rodas."
+  unit: "m"
+  source: "Parâmetro de teste."
+  value: 1.37
+  room_types: [bedroom, bathroom, living_room]

@@ -305,7 +305,9 @@ def test_the_format_goes_with_the_request_to_the_model() -> None:
     client = ScriptedChatClient([answer([finding("f1"), finding("f2"), finding("f3")])])
 
     asyncio.run(
-        ModelInspector(client, RULES).review(furnished(), violations_of(), Profile())
+        ModelInspector(client, RULES, CATALOG).review(
+            furnished(), violations_of(), Profile()
+        )
     )
 
     _, options = client.requests[0]
@@ -324,7 +326,7 @@ def test_each_id_stands_alone_on_its_own_line() -> None:
     """No experimento da Fase 0, id e rótulo na mesma linha foram copiados
     juntos para o `ref`."""
     violations = violations_of()
-    message = build_message(furnished(), violations, Profile())
+    message = build_message(furnished(), violations, Profile(), CATALOG)
     lines = message.splitlines()
 
     for ref in finding_ids(len(violations)):
@@ -334,7 +336,7 @@ def test_each_id_stands_alone_on_its_own_line() -> None:
 
 def test_the_message_carries_each_violation_without_the_source() -> None:
     violations = violations_of()
-    message = build_message(furnished(), violations, Profile(accessible=True))
+    message = build_message(furnished(), violations, Profile(accessible=True), CATALOG)
 
     first = message.split("\n\n")[1]
     assert first.splitlines() == [
@@ -415,7 +417,7 @@ def test_an_invalid_id_reaches_the_model_as_text_and_is_logged(
     )
     log = NegotiationLog.create(tmp_path, run_id="teste")
 
-    negotiation = run_with(ModelInspector(client, RULES), [cramped()], log=log)
+    negotiation = run_with(ModelInspector(client, RULES, CATALOG), [cramped()], log=log)
 
     invalid, valid = tool_results(client)
     assert invalid.startswith('O parâmetro "door_clearance" não existe.')
@@ -644,7 +646,9 @@ def test_the_model_inspector_reports_tokens_latency_and_tool_calls() -> None:
     )
 
     review = asyncio.run(
-        ModelInspector(client, RULES).review(furnished(), violations_of(), Profile())
+        ModelInspector(client, RULES, CATALOG).review(
+            furnished(), violations_of(), Profile()
+        )
     )
 
     assert review.tool_calls == 2
@@ -664,7 +668,7 @@ def test_a_reply_outside_the_format_is_an_inspector_error() -> None:
 
     with pytest.raises(InspectorError):
         asyncio.run(
-            ModelInspector(client, RULES).review(
+            ModelInspector(client, RULES, CATALOG).review(
                 furnished(), violations_of(), Profile()
             )
         )
@@ -679,7 +683,7 @@ def test_missing_variables_are_named(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
     with pytest.raises(InspectorError, match="AZURE_OPENAI_API_KEY"):
-        inspector_from_env(RULES)
+        inspector_from_env(RULES, CATALOG)
 
 
 # --- na negociação -------------------------------------------------------------
@@ -733,7 +737,7 @@ def run_with(
 def test_an_approved_proposal_does_not_call_the_model() -> None:
     client = ScriptedChatClient()
 
-    negotiation = run_with(ModelInspector(client, RULES), [proposal()])
+    negotiation = run_with(ModelInspector(client, RULES, CATALOG), [proposal()])
 
     assert negotiation.status == "approved"
     assert client.requests == []
@@ -743,7 +747,9 @@ def test_a_round_with_only_integrity_violations_does_not_call_the_model() -> Non
     client = ScriptedChatClient()
 
     negotiation = run_with(
-        ModelInspector(client, RULES), [without_nightstand(), proposal()], max_rounds=2
+        ModelInspector(client, RULES, CATALOG),
+        [without_nightstand(), proposal()],
+        max_rounds=2,
     )
 
     assert [item.status for item in negotiation.rounds] == ["rejected", "approved"]
@@ -771,7 +777,7 @@ def test_the_suggestion_reaches_the_furnisher() -> None:
             request(),
             Profile(),
             furnisher,
-            ModelInspector(client, RULES),
+            ModelInspector(client, RULES, CATALOG),
             CATALOG,
             RULES,
             plan_rules=PLAN_RULES,
@@ -799,7 +805,7 @@ def test_replay_keeps_what_the_code_corrected(tmp_path: Path) -> None:
     )
     log = NegotiationLog.create(tmp_path, run_id="teste")
 
-    negotiation = run_with(ModelInspector(client, RULES), [cramped()], log=log)
+    negotiation = run_with(ModelInspector(client, RULES, CATALOG), [cramped()], log=log)
     replayed = load_negotiation(log.path)
 
     review = replayed.rounds[0].review
@@ -814,7 +820,9 @@ def test_a_line_recorded_before_the_corrections_still_loads(tmp_path: Path) -> N
     """Os registros da 4a não têm os campos novos do parecer."""
     log = NegotiationLog.create(tmp_path, run_id="antigo")
     run_with(
-        ModelInspector(ScriptedChatClient([answer([])]), RULES), [cramped()], log=log
+        ModelInspector(ScriptedChatClient([answer([])]), RULES, CATALOG),
+        [cramped()],
+        log=log,
     )
 
     line = read_run(log.path)[0]

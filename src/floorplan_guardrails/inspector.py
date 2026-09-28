@@ -56,6 +56,7 @@ from agent_framework import (
 from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 from pydantic import BaseModel, ConfigDict, WithJsonSchema, create_model
 
+from floorplan_guardrails.derived_geometry import geometry_block
 from floorplan_guardrails.furnisher import (
     DEFAULT_REASONING_EFFORT,
     ENV_NAMES,
@@ -64,6 +65,7 @@ from floorplan_guardrails.furnisher import (
     profile_in_words,
 )
 from floorplan_guardrails.furniture import (
+    Catalog,
     FurnishedPlan,
     FurnishingProposal,
     Profile,
@@ -326,12 +328,18 @@ def build_message(
     furnished: FurnishedPlan,
     violations: Sequence[FurnitureViolation],
     profile: Profile,
+    catalog: Catalog,
 ) -> str:
     """Monta a mensagem enviada ao fiscal.
 
     Cada violação começa pelo seu id, sozinho numa linha. No experimento da
     Fase 0, com o id seguido de um rótulo na mesma linha, o modelo copiou o
     rótulo para o `ref`.
+
+    Depois da planta vai a geometria calculada pelo código: limites dos
+    cômodos, vão das portas, retângulo e frente de cada móvel. Na Fase 4b,
+    sem ela, o fiscal sugeriu posições fora do cômodo e rotações com a
+    frente para o lado errado.
 
     A fonte do parâmetro não vai na mensagem: o fiscal a consulta pela
     ferramenta.
@@ -366,6 +374,7 @@ def build_message(
             *blocks,
             "Planta com os móveis:\n"
             + json.dumps(furnished.model_dump(), ensure_ascii=False, indent=2),
+            geometry_block(furnished.plan, catalog, furnished.proposal),
             f"Perfil do morador:\n{profile_in_words(profile)}",
         ]
     )
@@ -522,7 +531,9 @@ class ModelInspector:
     """Fiscal com modelo: um agente com a ferramenta e saída estrita.
 
     Recebe o cliente de chat pronto, para que os testes possam trocá-lo por
-    um roteirizado; `inspector_from_env` monta o do Azure. O agente é
+    um roteirizado; `inspector_from_env` monta o do Azure. O catálogo vem no
+    construtor, e não em `review`, para que o `Protocol` continue o mesmo:
+    só o fiscal com modelo precisa dele, para calcular a geometria. O agente é
     recriado a cada chamada, porque o formato da resposta e o registro da
     ferramenta são daquela chamada; o custo é desprezível perto da espera
     pelo modelo.
@@ -532,10 +543,12 @@ class ModelInspector:
         self,
         client: Any,
         rules: FurnitureRules,
+        catalog: Catalog,
         reasoning_effort: str = DEFAULT_REASONING_EFFORT,
     ) -> None:
         self.client = client
         self.rules = rules
+        self.catalog = catalog
         self.reasoning_effort = reasoning_effort
 
     async def review(
@@ -558,7 +571,7 @@ class ModelInspector:
             ),
         )
 
-        message = build_message(furnished, violations, profile)
+        message = build_message(furnished, violations, profile, self.catalog)
         started = time.monotonic()
 
         try:
@@ -599,6 +612,7 @@ class ModelInspector:
 
 def inspector_from_env(
     rules: FurnitureRules,
+    catalog: Catalog,
     reasoning_effort: str = DEFAULT_REASONING_EFFORT,
 ) -> ModelInspector:
     """Monta o fiscal com modelo a partir das variáveis de ambiente do P1.
@@ -634,4 +648,4 @@ def inspector_from_env(
         model=os.environ["AZURE_OPENAI_DEPLOYMENT"],
     )
 
-    return ModelInspector(client, rules, reasoning_effort)
+    return ModelInspector(client, rules, catalog, reasoning_effort)

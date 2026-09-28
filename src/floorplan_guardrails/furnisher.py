@@ -15,8 +15,9 @@ qualquer número de lá aparecer nas instruções.
 
 A mensagem de cada chamada
 --------------------------
-Montada por `build_message`, uma função pura: a planta, o catálogo filtrado
-aos itens pedidos, o pedido, o perfil em palavras e, a partir da segunda
+Montada por `build_message`, uma função pura: a planta, a geometria
+calculada a partir dela (`derived_geometry`), o catálogo filtrado aos itens
+pedidos, o pedido, o perfil em palavras e, a partir da segunda
 rodada, a proposta anterior e o parecer. O perfil nunca leva número: "o
 morador usa cadeira de rodas", e não o diâmetro que isso exige.
 
@@ -37,6 +38,7 @@ from typing import Protocol
 from agent_framework import Agent
 from agent_framework.openai import OpenAIChatClient, OpenAIChatOptions
 
+from floorplan_guardrails.derived_geometry import plan_geometry, proposal_geometry
 from floorplan_guardrails.furnisher_prompt import INSTRUCTIONS
 from floorplan_guardrails.furniture import (
     Catalog,
@@ -166,13 +168,16 @@ def build_message(
 ) -> str:
     """Monta a mensagem enviada ao mobiliador.
 
-    Na primeira rodada vão a planta, o catálogo dos itens pedidos, o pedido
-    e o perfil. Nas seguintes vão junto a proposta anterior e o parecer, que
-    é o único caminho pelo qual as exigências de circulação chegam ao modelo.
+    Na primeira rodada vão a planta, a geometria calculada a partir dela, o
+    catálogo dos itens pedidos, o pedido e o perfil. Nas seguintes vão junto
+    a proposta anterior, seguida da geometria dos móveis dela, e o parecer,
+    que é o único caminho pelo qual as exigências de circulação chegam ao
+    modelo. A mensagem da primeira rodada é sempre o começo das seguintes.
     """
     parts = [
         "Planta aprovada, em que os móveis serão posicionados:\n"
         + json.dumps(plan.model_dump(), ensure_ascii=False, indent=2),
+        plan_geometry(plan),
         "Catálogo dos itens pedidos, com as dimensões sem rotação:\n"
         + catalog_json(requested_catalog(catalog, request)),
         "Pedido de móveis por cômodo, do id do cômodo à lista de itens; "
@@ -190,6 +195,7 @@ def build_message(
             "Proposta que você fez antes:\n"
             + json.dumps(previous.model_dump(), ensure_ascii=False, indent=2)
         )
+        parts.append(proposal_geometry(plan, catalog, previous))
 
     if feedback:
         lines = []
@@ -264,7 +270,13 @@ class AzureFurnisher:
             ) from exc
 
         latency_ms = round((time.monotonic() - started) * 1000)
-        proposal = reply.value
+
+        # O framework só lê a resposta no formato pedido quando `value` é
+        # acessado, e um texto fora do formato levanta ali.
+        try:
+            proposal = reply.value
+        except ValueError:
+            proposal = None
 
         if not isinstance(proposal, FurnishingProposal):
             raise FurnisherError(
