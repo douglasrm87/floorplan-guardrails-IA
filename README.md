@@ -78,11 +78,86 @@ tendência que sobrevive ao ruído é o tamanho da casa, não a clareza do pedid
 Plantas de até 7 cômodos aprovam em 89% das execuções, e de 8 em diante a taxa
 cai para 29% ([relatório](docs/avaliacao.md)).
 
+## A segunda oficina: mobiliário
+
+Continuação do mesmo projeto de extensão da PUCPR, realizada na Estácio em
+30/09/2026, também em encontro presencial de duas horas e no mesmo ambiente
+aberto pelo botão acima. Ela parte de onde a primeira parou: a planta já foi
+aprovada pelo validador, e agora é preciso pôr os móveis dentro dela.
+
+Dois agentes dividem o trabalho. O **mobiliador** posiciona os móveis pedidos,
+escolhidos de um catálogo com dimensões fixas. O **fiscal** redige o parecer em
+português, citando a fonte de cada exigência. Entre os dois, o código mede a
+integridade da proposta (cada móvel inteiro dentro do seu cômodo, nenhum sobre
+outro, o pedido atendido) e a circulação (espaço livre diante de cada porta,
+faixa de uso de cada móvel e, quando o morador usa cadeira de rodas, o giro
+dentro do cômodo). O princípio estende o da primeira oficina: **o LLM escolhe e
+explica; o código mede e decide.** O fiscal não consegue aprovar nem reprovar,
+o mobiliador não consegue contestar o parecer, e nenhum dos dois recebe nas
+instruções os valores de `config/furniture_rules.yaml`.
+
+São três níveis, no notebook
+[`notebooks/oficina-p2.ipynb`](notebooks/oficina-p2.ipynb). No primeiro, o
+participante pede móveis para uma planta pronta e observa a proposta do
+mobiliador. No segundo, lê o parecer do fiscal sobre uma disposição preparada
+para falhar, com e sem cadeira de rodas, e confere de onde veio cada exigência.
+No terceiro, acompanha a negociação inteira, em que o parecer volta ao
+mobiliador até a proposta passar ou as rodadas acabarem, e altera um valor em
+`config/furniture_rules.yaml` para ver a exigência mudar de lugar.
+
+A negociação termina em um de quatro estados:
+
+- `approved`: nenhuma verificação falhou;
+- `declined`: o mobiliador declarou que algum móvel não cabe;
+- `not_converged`: as rodadas acabaram e ainda havia violações;
+- `infeasible`: com cadeira de rodas, algum cômodo não comporta o giro nem
+  vazio. O código decide isso antes da primeira rodada, sem chamar modelo, e a
+  planta precisa voltar à etapa de geração.
+
+```mermaid
+flowchart TD
+    P[Planta aprovada no P1] --> V{validate do P1<br/>sem violações?}
+    V -- não --> X[Erro: planta de entrada inválida]
+    V -- sim --> AC{Perfil acessível?}
+    AC -- não --> M[Mobiliador<br/>agente MAF, saída estrita]
+    AC -- sim --> G{Algum cômodo não comporta<br/>o giro nem vazio?<br/>código, sem modelo}
+    G -- sim --> IN[infeasible]
+    G -- não --> M
+    R[Pedido estruturado + perfil] --> M
+    C[(Catálogo)] --> M
+    M --> O{Declarou omissão?}
+    O -- sim --> D[declined]
+    O -- não --> I[inspect<br/>integridade e circulação juntas<br/>código]
+    I -- sem violações --> A[approved]
+    I -- só integridade --> MSG[Parecer com as<br/>mensagens do código]
+    I -- alguma de circulação --> FI[Fiscal<br/>agente MAF redige parecer]
+    MSG --> L{Rodadas restantes?}
+    FI --> L
+    L -- sim --> M
+    L -- não --> N[not_converged]
+```
+
+Em 16 negociações medidas em 28/09/2026 com `gpt-5-mini`, o perfil padrão
+aprovou 4 de 8 e o acessível nenhuma. O mobiliador seguiu ao pé da letra 57 de
+66 sugestões do fiscal, e 30 dessas 57 voltaram a falhar na rodada seguinte
+([relatório](docs/avaliacao-p2.md)). Duas repetições por combinação é pouco
+para sustentar taxa, mas basta para o argumento: a sugestão do fiscal é uma
+proposta, e só vale depois que o código mede de novo.
+
+O conteúdo está escrito em [`docs/oficina-p2.md`](docs/oficina-p2.md), no
+mesmo espírito do guia da primeira oficina. O que se observou durante a
+construção e não virou mudança de código está em
+[`docs/p2-diario.md`](docs/p2-diario.md).
+
 ## Escopo e limites
 
 Casas térreas, cômodos retangulares alinhados aos eixos, portas e janelas, até
-cerca de dez cômodos. Fora do escopo: mais de um pavimento, estrutura, escadas,
-mobiliário, orientação solar, recuos do lote e desenho técnico executivo.
+cerca de dez cômodos. Na segunda oficina, móveis retangulares de um catálogo
+com medidas fixas, girados só de 90 em 90 graus; os limites dessa parte, como a
+folha de porta e a rota acessível entre cômodos, estão no
+[guia da segunda oficina](docs/oficina-p2.md#limites). Fora do escopo: mais de
+um pavimento, estrutura, escadas, orientação solar, recuos do lote e desenho
+técnico executivo.
 
 Os valores normativos são **didáticos**. Curitiba não fixa áreas mínimas nem
 frações de janela: o Decreto Municipal 2397/2023 deixa o dimensionamento dos
