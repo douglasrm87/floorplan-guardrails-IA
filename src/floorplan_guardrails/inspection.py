@@ -496,6 +496,16 @@ def check_request_matches(
 #: Passo da varredura que procura o quadrado de giro, em metros.
 GRID_STEP = 0.05
 
+#: Margem para o erro de ponto flutuante, em metros.
+#:
+#: Não é a `TOLERANCE`. A tolerância de 1 cm diz quando duas medidas são a
+#: mesma medida, e as regras a usam para aprovar ou reprovar. Esta margem só
+#: diz quando uma conta deu zero: 0.1 + 0.2 vale 0.30000000000000004, e um
+#: quadrado que encosta num móvel pode sair "entrando" 2e-16 m nele. Usar a
+#: tolerância no lugar deixaria o quadrado de giro entrar 1 cm no móvel, e o
+#: lado medido sairia 1 cm maior do que o espaço de verdade.
+FLOAT_MARGIN = 1e-9
+
 #: Como cada lado do móvel aparece numa frase.
 SIDE_PHRASES: dict[Side, str] = {
     "front": "na frente",
@@ -742,14 +752,11 @@ def _positions(start: float, end: float, side: float) -> list[float]:
 def touches_inside(first: Footprint, second: Footprint) -> bool:
     """Se dois retângulos têm área em comum, e não só uma borda.
 
-    Aqui não vale a tolerância de 1 cm: com ela, o quadrado poderia entrar
-    1 cm no móvel e o lado medido sairia 1 cm maior do que o espaço de
-    verdade. A margem de 1e-9 m só absorve o erro de ponto flutuante, como o
-    de 0.1 + 0.2, que não chega perto disso.
+    Compara com `FLOAT_MARGIN`, e não com `TOLERANCE`: ver a constante.
     """
     horizontal = min(first.x1, second.x1) - max(first.x0, second.x0)
     vertical = min(first.y1, second.y1) - max(first.y0, second.y0)
-    return horizontal > 1e-9 and vertical > 1e-9
+    return horizontal > FLOAT_MARGIN and vertical > FLOAT_MARGIN
 
 
 def _free_square(

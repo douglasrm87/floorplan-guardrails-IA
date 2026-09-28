@@ -43,6 +43,7 @@ from floorplan_guardrails.furniture import (
 from floorplan_guardrails.furniture_rules import FurnitureRules
 from floorplan_guardrails.geometry import TOLERANCE, span_x, span_y
 from floorplan_guardrails.inspection import (
+    FLOAT_MARGIN,
     FurnitureViolation,
     clearance_box,
     door_faces,
@@ -315,7 +316,11 @@ def room_label(ax: Axes, room: Room) -> Text | None:
     for text in ax.texts:
         name = text.get_text().split("\n")[0]
         x, y = text.get_position()
-        if name == room.name and abs(x - middle_x) < 1e-9 and abs(y - middle_y) < 1e-9:
+        if (
+            name == room.name
+            and abs(x - middle_x) < FLOAT_MARGIN
+            and abs(y - middle_y) < FLOAT_MARGIN
+        ):
             return text
 
     return None
