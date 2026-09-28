@@ -23,7 +23,6 @@ sozinha nunca carrega a informação, pelo mesmo motivo explicado em
 """
 
 from collections.abc import Sequence
-from typing import Literal
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
@@ -54,6 +53,14 @@ from floorplan_guardrails.inspection import (
     use_zones,
     zones_by_placement,
 )
+from floorplan_guardrails.negotiation import (
+    APPROVED,
+    DECLINED,
+    NOT_CONVERGED,
+    REJECTED,
+    RoundStatus,
+    RoundView,
+)
 from floorplan_guardrails.renderer import (
     BROKEN_EDGE,
     BROKEN_FILL,
@@ -83,14 +90,13 @@ ZONE_WIDTH = 0.8
 BROKEN_ZONE_WIDTH = 1.6
 ZONE_STYLE = (0, (4, 3))
 
-#: Como cada estado de rodada aparece no título.
-RoundStatus = Literal["approved", "rejected", "declined", "not_converged"]
-
+#: Como cada estado de rodada aparece no título. Os estados são definidos
+#: em `negotiation`; aqui só mora a palavra que o desenho escreve.
 ROUND_STATES: dict[str, str] = {
-    "approved": "aprovada",
-    "rejected": "reprovada",
-    "declined": "desistência",
-    "not_converged": "sem acordo",
+    APPROVED: "aprovada",
+    REJECTED: "reprovada",
+    DECLINED: "desistência",
+    NOT_CONVERGED: "sem acordo",
 }
 
 #: Abaixo desta medida, em metros, o rótulo do móvel leva só o id.
@@ -419,15 +425,16 @@ def round_title(
 
 
 def draw_negotiation(
-    history: Sequence[tuple[FurnishedPlan, Sequence[FurnitureViolation], RoundStatus]],
+    history: Sequence[RoundView],
     catalog: Catalog,
     rules: FurnitureRules,
     profile: Profile,
 ) -> Figure:
     """Desenha as rodadas lado a lado, na mesma escala.
 
-    Recebe uma tripla (planta mobiliada, violações, estado) por rodada, na
-    ordem em que a negociação as produziu.
+    Recebe `Negotiation.history`: uma tripla (planta mobiliada, violações,
+    estado) por rodada, na ordem em que a negociação as produziu. Uma
+    negociação gravada, relida por `load_negotiation`, desenha do mesmo jeito.
     """
     if not history:
         raise ValueError("não há rodadas para desenhar")

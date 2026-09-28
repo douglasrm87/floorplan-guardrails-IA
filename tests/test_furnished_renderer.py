@@ -12,12 +12,14 @@ Os testes usam só as fixtures de `tests/fixtures/p2/`, nunca `config/`.
 
 import json
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from matplotlib.colors import to_rgba
 
 from floorplan_guardrails.furnished_renderer import (
     BROKEN_ZONE_WIDTH,
+    ROUND_STATES,
     draw_furnished,
     draw_negotiation,
     move_room_labels,
@@ -33,6 +35,7 @@ from floorplan_guardrails.furniture import (
 )
 from floorplan_guardrails.furniture_rules import load_furniture_rules
 from floorplan_guardrails.inspection import FurnitureViolation, inspect
+from floorplan_guardrails.negotiation import RoundStatus
 from floorplan_guardrails.renderer import BROKEN_EDGE, draw_plan, save_png
 
 FIXTURES = Path(__file__).parent / "fixtures" / "p2"
@@ -324,6 +327,11 @@ def test_round_title(status: str, count: int, expected: str) -> None:
     violations = violations_of(cramped())[:count]
 
     assert round_title(1, status, violations) == expected
+
+
+def test_every_round_state_has_a_word_in_the_title() -> None:
+    # Os estados são definidos em `negotiation`; o desenho só os traduz.
+    assert set(ROUND_STATES) == set(get_args(RoundStatus))
 
 
 def test_negotiation_draws_one_panel_per_round_on_one_scale() -> None:
