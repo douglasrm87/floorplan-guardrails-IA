@@ -16,7 +16,7 @@ notebook desenha uma execução gravada, com o mesmo `draw_negotiation`.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,7 +27,7 @@ from floorplan_guardrails.furniture import (
     Profile,
 )
 from floorplan_guardrails.inspection import FurnitureViolation
-from floorplan_guardrails.inspector import Review
+from floorplan_guardrails.inspector import Replacement, Review
 from floorplan_guardrails.negotiation import Negotiation, Round
 from floorplan_guardrails.runlog import new_run_id, read_run
 from floorplan_guardrails.schema import FloorPlan
@@ -118,11 +118,19 @@ def report(review: Review | None) -> dict | None:
         ],
         "summary": review.summary,
         "tool_calls": review.tool_calls,
+        "invalid_params": review.invalid_params,
+        "replacements": [asdict(item) for item in review.replacements],
+        "duplicate_refs": review.duplicate_refs,
+        "missing_refs": review.missing_refs,
     }
 
 
 def review_from(line: dict) -> Review | None:
-    """O parecer de uma linha gravada, de volta como `Review`."""
+    """O parecer de uma linha gravada, de volta como `Review`.
+
+    Os registros do que o código corrigiu no texto do fiscal entraram depois
+    das primeiras gravações; numa linha antiga, ficam vazios.
+    """
     data = line["report"]
     if data is None:
         return None
@@ -134,6 +142,10 @@ def review_from(line: dict) -> Review | None:
         output_tokens=line["inspector"]["output_tokens"],
         latency_ms=line["inspector"]["latency_ms"],
         tool_calls=data["tool_calls"],
+        invalid_params=data.get("invalid_params", []),
+        replacements=[Replacement(**item) for item in data.get("replacements", [])],
+        duplicate_refs=data.get("duplicate_refs", []),
+        missing_refs=data.get("missing_refs", []),
     )
 
 
