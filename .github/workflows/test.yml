@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v10.1.0
+      - uses: astral-sh/setup-uv@v10.2.0
       - run: uv sync --frozen
       # Sem chave do Azure: nenhum teste pode chamar o modelo de verdade.
       - run: uv run pytest
