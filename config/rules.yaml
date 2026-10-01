@@ -35,7 +35,7 @@ opening_factor: 0.50
 rules:
   min_area:
     description: "Área mínima do piso do cômodo."
-    unit: "m²"
+    unit: "m²0"
     source: >-
       Valor didático. Curitiba não fixa área mínima: o dimensionamento dos
       cômodos é responsabilidade do projetista (Decreto Municipal 2397/2023,
